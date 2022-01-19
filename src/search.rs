@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2021 Brandon Gong
+Copyright (c) 2022 Brandon Gong
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,6 +19,7 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 */
+
 use crate::bitboard::*;
 use crate::evaluation::evaluate;
 use rustc_hash::FxHashMap;
@@ -32,17 +33,21 @@ use rand::seq::SliceRandom;
  * alpha-beta pruning.
  */
 
+// Simple max and min functions so we don't have to keep writing the same
+// ternary statement over and over
 #[inline(always)]
 fn max(a: f64, b: f64) -> f64 {
 	if a > b { a } else { b }
 }
-
 #[inline(always)]
 fn min(a: f64, b: f64) -> f64 {
 	if a < b { a } else { b }
 }
 
-// 20 move rule
+// For the purposes of training, I'm keeping this at a very tight 10 move rule
+// to draw to try to push networks to fight for wins instead of repeating.
+// However in an actual game it would be better to have a more proper 40 move
+// rule or something.
 pub const HALF_MOVES_TO_DRAW: u8 = 20;
 
 /// From the current position, performs a quiescent search, searching with
@@ -62,8 +67,10 @@ fn q_minimax(
 	// to be made, in which case we just return the static evaluation.
 	if moves.len() == 0 {
 		let eval = if is_maximizing {
+			// If we are white, just evaluate the board without doing anything
 			evaluate(current_pos, evaluator)
 		} else {
+			// else flip the board and evaluate from black's POV
 			evaluate(&flip_board(current_pos), evaluator)
 		};
 		return eval;
@@ -131,11 +138,14 @@ fn minimax(
 		return eval;
 	}
 
+	// Generate ALL legal moves, not just captures
 	let moves = gen_moves(current_pos);
 
+	// This is pretty much a textbook minimax algorithm, so I won't annotate much.
 	if is_maximizing {
 		let mut max_eval = f64::MIN;
 		for m in moves.iter() {
+			// Flip board as we recur so we always evaluate from white perspective
 			let eval = minimax(&flip_board(m), depth_remaining - 1,
 				alpha, beta, false, evaluator, memo);
 			max_eval = max(eval, max_eval);
@@ -144,6 +154,7 @@ fn minimax(
 				break;
 			}
 		}
+		// Insert the evaluation into transposition table and return.
 		memo.insert(*current_pos, (depth_remaining, max_eval));
 		max_eval
 	} else {
@@ -167,14 +178,24 @@ fn minimax(
 /// has been made as well as the evaluation for the given position.
 pub fn make_move(board: &Board, depth: u32, evaluator: &Vec<Vec<f64>>)
 	-> Option<(Board, f64)> {
+
+	// We search every possible move, and return the one that yields the best
+	// evaluation.
 	let moves = gen_moves(board);
+
+	// No moves to make. This should be treated as a loss.
 	if moves.len() == 0 {
 		return None;
 	}
 
+	// We can thread the memoization table throughout each search by passing it
+	// as a mutable reference.
 	let mut memo: FxHashMap<Board, (u32, f64)> = FxHashMap::default();
 	let mut evals = Vec::new();
 	let mut best_eval = f64::MIN;
+
+	// For each move, get its corresponding evaluation. At the same time, we
+	// keep track of the best evaluation we've seen so far.
 	for m in moves.iter() {
 		let eval = minimax(&flip_board(m), depth - 1, f64::MIN, f64::MAX, false,
 			evaluator, &mut memo);
@@ -182,12 +203,15 @@ pub fn make_move(board: &Board, depth: u32, evaluator: &Vec<Vec<f64>>)
 		evals.push(eval);
 	}
 
+	// Match the evaluations up with the corresponding moves, and filter out
+	// only the moves that led to the highest evaluation.
 	let best_moves: Vec<(Board, f64)> = moves
 		.into_iter()
 		.zip(evals.into_iter())
 		.filter(|(_,e)| *e == best_eval)
 		.collect();
 
+	// Pick a random move out of the equivalently best moves.
 	Some(*(best_moves.choose(&mut rand::thread_rng()).unwrap()))
 }
 
