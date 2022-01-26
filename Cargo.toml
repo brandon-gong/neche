@@ -7,4 +7,3 @@ edition = "2021"
 rand = "0.8.4"
 rustc-hash = "1.1.0"
 rayon = "1.5.1"
-indicatif = {version = "0.16.2", features = ["rayon"]}

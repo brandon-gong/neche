@@ -27,6 +27,7 @@ mod search;
 mod evolution;
 
 use std::fs;
+use std::cmp::Ordering;
 
 /// Main entry point for evolution. We check if there are existing files from
 /// previous generations. If so, we attempt to continue from that point; if not,
@@ -34,11 +35,10 @@ use std::fs;
 fn main() {
 	if fs::metadata("./nechedbg/").is_ok() {
 		println!("Found debug folder, attempting to resume evolution...");
-		evolution::evolve_resume(200, 100, 6);
+		evolution::evolve_resume(200, 200, 6);
 	} else {
 		println!("No debug folder found. Evolving from zero knowledge.");
 		fs::create_dir("./nechedbg").unwrap();
-		evolution::evolve_zero(200, 100, 6);
+		evolution::evolve_zero(200, 200, 6);
 	}
 }
-

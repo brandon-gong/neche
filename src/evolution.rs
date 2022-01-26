@@ -63,6 +63,8 @@ pub fn simulate_game((white_genome, black_genome): (&String, &String),
 	let white_evaluator = genome_to_evaluator(white_genome);
 	let black_evaluator = genome_to_evaluator(black_genome);
 
+	// println!("{}", board_to_string(&position));
+
 	// Loop indefinitely while the game is still going on.
 	loop {
 
@@ -78,7 +80,10 @@ pub fn simulate_game((white_genome, black_genome): (&String, &String),
 			None => break Ordering::Less,
 
 			// Otherwise, white plays a move and flips the board for black.
-			Some((new_pos, _)) => position = flip_board(&new_pos)
+			Some((new_pos, _)) => {
+				//println!("{}", board_to_string(&new_pos));
+				position = flip_board(&new_pos);
+			}
 		};
 
 		// Now black moves.
@@ -87,7 +92,10 @@ pub fn simulate_game((white_genome, black_genome): (&String, &String),
 			None => break Ordering::Greater,
 
 			// Otherwise, black plays a move and flips the board black for white.
-			Some((new_pos, _)) => position = flip_board(&new_pos)
+			Some((new_pos, _)) => {
+				position = flip_board(&new_pos);
+				//println!("{}", board_to_string(&position));
+			}
 		};
 	}
 }
@@ -147,7 +155,7 @@ fn evolve_from_generation(mut latest: u32, mut generation: Vec<String>,
 		// Arbitrarily, do three rounds. I think more than one is necessary,
 		// because there is randomness involved in the results, but too many would
 		// be infeasible to compute in a reasonable time.
-		for i in 0..3 {
+		for i in 0..2 {
 			println!("Simulating round {}.", i + 1);
 			let mut ranking: Vec<usize> = (0..generation_size).collect();
 			// Shuffle the original list to randomize rankings in case of ties.
@@ -197,8 +205,8 @@ fn evolve_from_generation(mut latest: u32, mut generation: Vec<String>,
 			new_generation.push(gen_offspring(
 				&generation[rand_with_dist(&rescale)],
 				&generation[rand_with_dist(&rescale)],
-				0.03, // point mutate rate
-				0.1 // translocate mutate rate
+				0.001, // point mutate rate
+				0.02 // translocate mutate rate
 			));
 		}
 		println!("done.");
@@ -289,6 +297,64 @@ pub fn evolve_resume(genome_size: u32, generation_size: u32, depth: u32) -> ! {
 		// Pass control over to evolve_from_generation
 		evolve_from_generation(highest_gen.try_into().unwrap(), networks, depth);
 	}
+}
+
+/// Given an input file of networks, do a round robin on all of the networks,
+/// and output all of the results of the games to a file.
+pub fn do_round_robin(input_path: &str, output_path: &str, depth: u32) -> () {
+	
+	println!("Opening input path networks for reading... ");
+	let mut networks_file = OpenOptions::new()
+		.read(true)
+		.open(input_path)
+		.unwrap();
+	let mut buffer = String::new();
+	networks_file.read_to_string(&mut buffer).unwrap();
+	
+	// Split file input on newlines
+	let mut networks: Vec<String> = buffer
+		.split("\n")
+		.map(|x| x.to_string())
+		.filter(|x| x.len() > 0)
+		.collect();
+	let num_networks = networks.len();
+	if num_networks <= 1 {
+		panic!("Failed: cannot do round robin on less than two networks.");
+	}
+
+	println!("Done parsing input file. Preparing to perform round robin \
+	on {} networks.", num_networks);
+
+	// Generate all pairs of indices to work with.
+	let mut idx_pairs = Vec::with_capacity(num_networks * (num_networks - 1));
+	for i in 0..num_networks {
+		for j in 0..num_networks {
+			idx_pairs.push((i, j));
+		}
+	}
+
+	println!("Doing round robin. This will take time.");
+
+	let results: Vec<char> = idx_pairs
+		.par_iter()
+		.map(|(a, b)| match simulate_game((&networks[*a], &networks[*b]), depth) {
+			Ordering::Less => 'L',
+			Ordering::Equal => 'D',
+			Ordering::Greater => 'W'})
+		.collect();
+	
+	println!("Done. Writing results to output.");
+	let mut out_file = OpenOptions::new()
+		.write(true)
+		.create(true)
+		.truncate(true)
+		.open(output_path)
+		.unwrap();
+	for i in 0..idx_pairs.len() {
+		out_file.write_all(format!("{} {} {}\n",
+		idx_pairs[i].0, idx_pairs[i].1, results[i]).as_bytes());
+	}
+	println!("done.");
 }
 
 #[cfg(test)]
